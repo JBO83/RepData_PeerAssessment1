@@ -1,25 +1,159 @@
 ---
-title: "Reproducible Research: Peer Assessment 1"
-output: 
-  html_document:
-    keep_md: true
+title: "W2-Reproducible research"
+author: "JBO"
+date: "7/11/2020"
+output: html_document
 ---
 
 
-## Loading and preprocessing the data
+## Project overview  
+This assignment consist of showing various key figures for a persons number of steps logged with 5 minute intervals over a 2 month period from 10/01/2012 to 11/30/2012.
+
+## Needed packages  
+The following packages are needed for the analysis to run:
+
+```{r message=FALSE}  
+library(dplyr)  
+library(ggplot2)  
+library(knitr)  
+library(lubridate)  
+```
+
+
+### Loading and Preprocessing the data
+Here we read in the given data and make sure the date column is treated as dates instead of characters.
+
+```{r}
+dat<-read.csv("activity.csv")
+dat$date<-as.Date(dat$date)
+```
 
 
 
-## What is mean total number of steps taken per day?
+### What is mean total number of steps taken per day?
+To see how the persons steps a distributed on a daily basis we create a new data frame that conist of total number of steps taken each days. NA's are removed.
 
 
+```{r message=FALSE}
+df_steps_day<-dat %>%
+  filter(!is.na(steps)) %>%
+  mutate(date = floor_date(date)) %>%
+  group_by(date) %>%
+  summarize(total_steps = sum(steps))
+```
+
+With this new data frame we can plot the histogram of the total number of steps taken:
+
+```{r}
+hist(df_steps_day$total_steps,ylab="No of days", xlab = "No of steps", main = "Histogram of number of total steps taken per day")
+```
+
+We can further get the mean:
+```{r}
+mean(df_steps_day$total_steps)
+```
+
+and the median
+```{r}
+median(df_steps_day$total_steps)
+```
 
 ## What is the average daily activity pattern?
+We create a new data frame that provides the mean number of steps taken at each interval, disregarding NA's.
 
+```{r message=FALSE}
+df_interval<-dat %>%
+  filter(!is.na(steps)) %>%
+  group_by(interval) %>%
+  summarize(mean_steps = mean(steps))
+```
 
+With this new data fram we can see how the avergae number of steps changes over the intervals.
+
+```{r}
+with(df_interval, plot(interval,mean_steps,type = "l",ylab="Mean number of steps per interval",
+                       xlab = "Interval", main = "Line plot of mean number of steps taken for given interval"))
+```
+
+The interval with the highest number of mean steps can be found via:
+
+```{r}
+df_interval$interval[which.max(df_interval$mean_steps)]
+```
 
 ## Imputing missing values
+First we find how many NA's the dataset actually contains
+
+```{r}
+sum(is.na(dat$steps))
+```
 
 
+Instead of just removing NA's all together I will instead fill any missing value with the average value for the iven interval and day.  
+To this end I use the weekdays function to distinguish between days and create a lookup data fram with the mean number of steps taken per interval and day.
 
+```{r message=FALSE}
+df_interpolate<-dat %>%
+  filter(!is.na(steps)) %>%
+  mutate(day_no = weekdays(date)) %>%
+  group_by(interval,day_no) %>%
+  summarize(mean_steps = mean(steps))
+```
+
+Having this lookup table available I can loop through the raw data frame and exchange the NA's with the values from the just calculated data frame.
+
+```{r}
+dat_int<-dat
+for (i in 1:nrow(dat)){
+  if (is.na(dat$steps[i])){
+    dat_int$steps[i]<-df_interpolate$mean_steps[which(df_interpolate$day_no==weekdays(dat$date[i]) 
+                                                  & df_interpolate$interval==dat$interval[i])]         
+  }
+}
+```  
+
+As earlier we can now find the total number of steps taken
+```{r message=FALSE}
+df_steps_day1<-dat_int %>%
+  mutate(date = floor_date(date)) %>%
+  group_by(date) %>%
+  summarize(total_steps = sum(steps))
+```  
+and the histogram of those.
+
+```{r}
+hist(df_steps_day1$total_steps,ylab="No of days", xlab = "No of steps", main = "Histogram of number of total steps taken per day")  
+```  
+
+Mean total number of steps
+```{r}
+mean(df_steps_day1$total_steps)
+```
+and median
+```{r}
+median(df_steps_day1$total_steps)
+```
+
+The scheme for dealing with NA's have not changed the values completely.
 ## Are there differences in activity patterns between weekdays and weekends?
+Last we want to see if there any differences between weekdays and weekend days.  
+For that purpose we construct a data frame with a column that characterize each day as either a weekday or weekend day.
+I use the wday function that can tell me by a numeric value to which category a given day belong. Mean number of steps is the calculated for each category.
+
+As earlier we can now find the total number of steps taken
+```{r message=FALSE}
+df_week<-dat_int %>%
+  mutate(date = floor_date(date)) %>%
+  mutate(day_type = if_else(wday(date,week_start = 1)<6,"Weekday","Weekend")) %>%
+  group_by(interval,day_type) %>%
+  summarize(mean_steps = mean(steps))
+```
+
+A plot using the facet system from ggplot2 can now be shown.
+```{r}
+ggplot(df_week, aes(x=interval, y=mean_steps))+geom_line() +facet_grid(day_type~.)
+```
+
+From these graphs it seems fair to say that the persons activity level depends on it being either a weekday or weekend.
+
+
